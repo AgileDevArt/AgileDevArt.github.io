@@ -1,0 +1,15 @@
+# FROM ubuntu:rolling
+FROM ubuntu:impish-20220128
+
+RUN apt update && DEBIAN_FRONTEND=noninteractive apt install -y kubuntu-desktop
+
+RUN rm -f /run/reboot-required*
+RUN useradd -m testuser -p $(openssl passwd 1234)
+RUN usermod -aG sudo testuser
+
+RUN apt install -y xrdp
+RUN adduser xrdp ssl-cert
+
+EXPOSE 3389
+
+CMD service dbus start ; /usr/lib/systemd/systemd-logind & service xrdp start ; bash
