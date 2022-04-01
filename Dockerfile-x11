@@ -1,0 +1,7 @@
+FROM ubuntu:impish-20220128
+
+RUN apt update && apt install -y pcmanfm featherpad
+
+ENV DISPLAY=host.docker.internal:0.0
+
+CMD pcmanfm
