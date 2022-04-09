@@ -7,6 +7,12 @@ RUN apt install -y xrdp && adduser xrdp ssl-cert
 RUN useradd -m testuser -p $(openssl passwd 1234) && \
     usermod -aG sudo testuser
 
+#####################
+# Budgie panel (fix)
+#####################
+RUN sed -i '3 a echo "\
+budgie-panel & budgie-wm --x11 & plank" > ~/.Xsession' /etc/xrdp/startwm.sh
+
 RUN sed -i '3 a echo "\
 export XDG_SESSION_DESKTOP=budgie-desktop\\n\
 export XDG_SESSION_TYPE=x11\\n\
