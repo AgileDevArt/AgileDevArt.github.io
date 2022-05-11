@@ -1,0 +1,13 @@
+FROM ubuntu:jammy-20220428
+
+ARG USER=browser
+
+RUN apt update && \
+    DEBIAN_FRONTEND=noninteractive apt install -y falkon && \
+    useradd -m $USER
+
+ENV DISPLAY=host.docker.internal:0.0
+
+USER $USER
+
+CMD falkon
