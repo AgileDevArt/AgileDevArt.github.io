@@ -1,0 +1,27 @@
+FROM  i386/alpine:20220328
+
+ARG USER=testuser
+ARG PASS=1234
+
+#WINE INSTALL
+RUN apk add --no-cache sudo bash wget wine=7.8-r0 winetricks --repository=http://dl-cdn.alpinelinux.org/alpine/edge/testing/
+RUN apk add --no-cache zenity font-opensans adwaita-icon-theme
+# Download Mono
+RUN mkdir -p /opt/wine/mono && \ 
+	wget -O /opt/wine/mono/wine-mono-7.2.0-x86.msi https://dl.winehq.org/wine/wine-mono/7.2.0/wine-mono-7.2.0-x86.msi && \
+	wine msiexec /i /opt/wine/mono/wine-mono-7.2.0-x86.msi
+
+# Download Gecko
+RUN mkdir -p /opt/wine/gecko && \ 
+	wget -O /opt/wine/gecko/wine-gecko-2.47.2-x86.msi https://dl.winehq.org/wine/wine-gecko/2.47.2/wine-gecko-2.47.2-x86.msi && \
+	wine msiexec /i /opt/wine/gecko/wine-gecko-2.47.2-x86.msi
+
+RUN adduser -D --shell /bin/bash $USER && \
+	echo "$USER:$PASS" | chpasswd && \
+	echo "$USER ALL=(ALL) ALL" > /etc/sudoers.d/$USER && chmod 0440 /etc/sudoers.d/$USER
+
+ENV DISPLAY=host.docker.internal:0.0
+
+USER testuser
+
+CMD bash

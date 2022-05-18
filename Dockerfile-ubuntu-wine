@@ -1,0 +1,34 @@
+FROM ubuntu:jammy-20220428
+
+ARG USER=testuser
+ARG PASS=1234
+
+#WINE INSTALL
+RUN apt update && \
+	apt install -y wget lsb-release gpg software-properties-common && \
+	dpkg --add-architecture i386 && \
+	wget -qO- https://dl.winehq.org/wine-builds/winehq.key | gpg --dearmor -o /etc/apt/trusted.gpg.d/winehq.key.gpg && \
+	apt-add-repository "deb http://dl.winehq.org/wine-builds/ubuntu/ $(lsb_release -cs) main" && \
+	DEBIAN_FRONTEND=noninteractive apt install -y winehq-staging winetricks
+RUN apt update && apt install -y zenity
+# Download Mono
+RUN mkdir -p /opt/wine/mono && \ 
+	wget -O /opt/wine/mono/wine-mono-7.2.0-x86.msi https://dl.winehq.org/wine/wine-mono/7.2.0/wine-mono-7.2.0-x86.msi && \
+	wine msiexec /i /opt/wine/mono/wine-mono-7.2.0-x86.msi
+
+# Download Gecko
+RUN mkdir -p /opt/wine/gecko && \ 
+	wget -O /opt/wine/gecko/wine-gecko-2.47.2-x86_64.msi https://dl.winehq.org/wine/wine-gecko/2.47.2/wine-gecko-2.47.2-x86_64.msi && \
+	wine msiexec /i /opt/wine/gecko/wine-gecko-2.47.2-x86_64.msi
+
+RUN useradd -m $USER -p $(openssl passwd $PASS) && \
+    usermod -aG sudo $USER && \
+    chsh -s /bin/bash $USER
+
+ENV DISPLAY=host.docker.internal:0.0
+# ENV WINEARCH=win32
+# ENV WINEPREFIX=/home/$USER/.wine-32
+
+USER testuser
+
+CMD bash
