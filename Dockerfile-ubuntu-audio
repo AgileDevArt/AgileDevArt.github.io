@@ -1,0 +1,7 @@
+FROM ubuntu:impish-20220128
+
+RUN apt update && apt install -y bash pulseaudio alsa-utils sox libsox-fmt-all
+
+ENV PULSE_SERVER=host.docker.internal
+
+CMD bash

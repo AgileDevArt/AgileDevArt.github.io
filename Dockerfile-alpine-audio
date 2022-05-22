@@ -1,0 +1,7 @@
+FROM alpine:20220328
+
+RUN apk add --no-cache bash pulseaudio alsa-utils alsa-plugins-pulse sox
+
+ENV PULSE_SERVER=host.docker.internal
+
+CMD bash
