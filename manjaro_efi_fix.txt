@@ -1,0 +1,6 @@
+######################
+# Create EFI entry on /dev/sdb1 (boot partition)
+######################
+sudo mkdir /tmp/boot
+sudo mount /dev/sdb1 /tmp/boot
+sudo grub-install --target=x86_64-efi --removable --recheck --boot-directory=/tmp/boot --efi-directory=/tmp/boot
