@@ -1,0 +1,34 @@
+######################
+# Use cam2web
+######################
+sudo apt install ffmpeg curl jq
+ffplay http://192.168.36.112:8000/camera/mjpeg
+curl http://192.168.36.112:8000/camera/info | jq
+curl http://192.168.36.112:8000/camera/config | jq
+curl -X POST -d '{ "brightness":"16", "contrast":"16" }' http://192.168.36.112:8000/camera/config | jq
+######################
+# Use cam2web with authentication
+######################
+curl --digest -u username:password http://192.168.36.112:8000/camera/mjpeg --output - | ffplay -
+curl --digest -u username:password http://192.168.36.112:8000/camera/info | jq
+curl --digest -u username:password http://192.168.36.112:8000/camera/config | jq
+curl --digest -u username:password -X POST -d '{ "brightness":"16", "contrast":"16" }' http://192.168.36.112:8000/camera/config | jq
+######################
+# Build cam2web
+######################
+sudo apt install -y wget git cmake extra-cmake-modules build-essential gettext libjpeg-dev
+git clone https://github.com/cvsandbox/cam2web.git
+cd cam2web
+pushd .
+cd src/tools/web2h/make/gcc/
+make
+popd
+pushd .
+cd src/apps/linux/
+make
+popd
+######################
+# Run cam2web
+######################
+cd cam2web/build/gcc/release/bin
+sudo ./cam2web
