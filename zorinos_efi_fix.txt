@@ -1,0 +1,10 @@
+######################
+# Create EFI entry on /dev/sdb1 (boot partition)
+######################
+sudo apt install grub-efi
+sudo mkdir /target
+sudo mount /dev/sdb2 /target
+sudo mount /dev/sdb1 /target/boot/efi
+for dir in proc dev sys etc bin sbin var usr lib lib64 tmp; do sudo mount --bind /$dir /target/$dir ; done
+sudo chroot /target
+sudo grub-install --target=x86_64-efi --removable --recheck --efi-directory=/boot/efi
