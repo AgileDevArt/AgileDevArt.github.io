@@ -1,0 +1,14 @@
+######################
+# Export linux distribution as .tar and copy to USB drive
+######################
+sudo tar -cvpzf parrot.tar.gz --exclude=/proc --exclude=/sys --exclude=/home/agiledevart/parrot.tar.gz --one-file-system /
+sudo cp parrot.tar.gz /media/agiledevart/Data/parrot.tar.gz
+######################
+# Snapshot WSL distribution as .tar
+######################
+sudo tar -cvpzf parrot.tar.gz --exclude=/proc --exclude=/sys --exclude=/lost+found --one-file-system /
+######################
+# Import linux distribution in WSL from .tar and change default user
+######################
+wsl --import Parrot .\parrot .\parrot.tar.gz
+echo -e "[user]\ndefault=agiledevart" >> /etc/wsl.conf
