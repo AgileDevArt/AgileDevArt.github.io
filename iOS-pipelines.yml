@@ -1,0 +1,206 @@
+trigger:
+- master
+
+name: $(rev:r)
+stages:
+- stage: 'Unity_Build'
+  displayName: 'Build & Export Unity Project'
+  jobs: 
+  - job: 'Unity_Build_Mobile'
+    displayName: 'Unity Build iOS'
+    pool:
+      vmImage: 'macOS-13'
+
+    variables:
+      PRODUCT_NAME: 'MyApp'
+      PRODUCT_IDENTIFIER: 'com.company.myapp'
+      UNITY_PATH: '/Applications/Unity/Unity.app/Contents/MacOS/Unity'
+      # CERTIFICATE_PASSWORD: ***
+      # USERNAME: ***
+      # PASSWORD: ***
+
+    steps:
+    - checkout: self
+
+    - task: CmdLine@2
+      displayName: 'Installing Packages'
+      inputs:
+        script: |
+          brew install md5sha1sum
+
+          curl -O https://download.unity3d.com/download_unity/001fa5a8e29a/MacEditorInstaller/Unity-6000.0.22f1.pkg
+          sudo installer -verboseR -pkg Unity-6000.0.22f1.pkg -target /
+          rm Unity-6000.0.22f1.pkg
+
+          curl -O https://download.unity3d.com/download_unity/001fa5a8e29a/MacEditorTargetInstaller/UnitySetup-iOS-Support-for-Editor-6000.0.22f1.pkg
+          sudo installer -verboseR -pkg UnitySetup-iOS-Support-for-Editor-6000.0.22f1.pkg -target /
+          rm UnitySetup-iOS-Support-for-Editor-6000.0.22f1.pkg
+
+    - task: CmdLine@2
+      displayName: 'Activate Unity'
+      inputs:
+        script: |
+          LICENSE_FILE='/Library/Application Support/Unity/Unity_lic.ulf'
+          UNITY_CMD="$UNITY_PATH -batchmode -createManualActivationFile -verbose -username $(USERNAME) -password $(PASSWORD) -logfile"
+
+          bash -c "$UNITY_CMD"
+          REQUEST_XML=$(cat *.alf)
+          echo "REQUEST: "$REQUEST_XML
+
+          BODY='{"grant_type":"password", "username":"'"$(USERNAME)"'", "password":"'"$(PASSWORD)"'"}'
+          access_token=$(curl -s -S\
+              -H "Accept: application/json" \
+              -H "Content-Type:application/json" \
+              -X POST -d "$BODY" "https://core.cloud.unity3d.com/api/login" | \
+              jq -r '.access_token')
+
+          echo "LOGIN: "$(curl -s -S\
+              -H "Authorization: Bearer $access_token" \
+              "https://core.cloud.unity3d.com/api/users/me")
+
+          TX=$(uuidgen | sha1sum | tr '[:upper:]' '[:lower:]' | awk '{print toupper($1)}')
+          echo "TX: $TX"
+
+          transaction_raw=$(curl -s -S\
+              -H "Authorization: Bearer $access_token" \
+              -H "Content-Type:text/xml" \
+              -X POST -d "${REQUEST_XML}" "https://license.unity3d.com/update/poll?cmd=9&tx_id=$TX")
+          transaction=$(echo "$transaction_raw" | sed -n 's/.*<Answered>\(.*\)<\/Answered>$/\1/p')
+
+          if [ "$transaction" != "true" ]; then
+              echo "ERROR: Transaction not allowed, $transaction_raw"
+              exit 1
+          fi
+
+          BODY='{"transaction": {"serial": {"type":"personal"}}}'
+          RX=$(curl -s -S\
+              -H "Authorization: Bearer $access_token" \
+              -H "Content-Type:application/json" \
+              -X PUT -d "$BODY" "https://license.unity3d.com/api/transactions/$TX" | jq -r '.transaction.rx')
+          echo "RX: $RX"
+
+          curl -s -S\
+              -H "Authorization: Bearer $access_token" \
+              -H "Content-Type:text/xml" \
+              -X POST -d "${REQUEST_XML}" "https://activation.unity3d.com/license.fcgi?CMD=9&TX=$TX&RX=$RX" > "$LICENSE_FILE"
+
+          if test -f "$LICENSE_FILE"; then
+              echo "LICENSE: $LICENSE_FILE"
+          else
+              echo "ERROR: Does not exist $LICENSE_FILE"
+              exit 2
+          fi
+          #cat "$LICENSE_FILE"
+
+    - task: CmdLine@2
+      displayName: 'Unity Build iOS'
+      inputs:
+        script: |
+          IOS_PROJ='iOSProj'
+          if [ -d "${IOS_PROJ}" ]
+          then
+              rm -fr "${IOS_PROJ}"
+          fi
+          mkdir "${IOS_PROJ}"
+
+          # Export unity project to xcode project
+          UNITY_CMD="$UNITY_PATH -buildTarget iOS -batchmode -projectPath ./ -executeMethod BuildTool.ExportXcodeProject -outputPath $IOS_PROJ -username $(USERNAME) -password $(PASSWORD) -logFile -"
+          bash -c "$UNITY_CMD"
+          if [ ! -d "${IOS_PROJ}/Unity-iPhone.xcodeproj" ]
+          then
+              echo "[ERR]Exporting unity project to Xcode failed."
+              exit 1
+          fi
+
+          # Update PRODUCT_NAME
+          sed -i '' "s/PRODUCT_NAME\ =\ ProductName/PRODUCT_NAME\ =\ \"${PRODUCT_NAME}\"/g" "${IOS_PROJ}/Unity-iPhone.xcodeproj/project.pbxproj"
+          # Update PRODUCT_BUNDLE_IDENTIFIER
+          sed -i '' "s/com.Company.\${PRODUCT_NAME}/${PRODUCT_IDENTIFIER}/g" "${IOS_PROJ}/Info.plist"
+          # Versioning
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $(Build.BuildNumber)" "${IOS_PROJ}/Info.plist"
+
+    - publish: 'iOSProj'
+      artifact: iOSProj
+
+- stage: 'XCode_Build'
+  displayName: 'Build XCode Project'
+  dependsOn: 'Unity_Build'
+  condition:  succeeded()
+  jobs:
+  - job: 'XCode_Build'
+    displayName: 'XCode Build'
+    pool:
+      vmImage: 'macOS-13'
+      demands: xcode
+
+    steps:
+    - checkout: none
+    - download: current
+      artifact: iOSProj
+
+    - task: InstallAppleCertificate@2
+      displayName: 'Install an Apple certificate - development'
+      name: cert
+      inputs:
+        certSecureFile: 'development_16092024.p12'
+        certPwd: '$(CERTIFICATE_PASSWORD)'
+        setUpPartitionIdACLForPrivateKey: false
+
+    - task: InstallAppleProvisioningProfile@1
+      displayName: 'Install an Apple provisioning profile'
+      name: profile
+      inputs:
+        provProfileSecureFile: 'MyApp_Development_Provisioning_Profile_07102024.mobileprovision'
+
+    - task: CmdLine@2
+      displayName: 'Set Permissions'
+      inputs:
+        script: sudo chmod -R 777 $(Pipeline.Workspace)/iOSProj
+
+    - task: CmdLine@2
+      displayName: 'Profile on xcodeproj (workaround)'
+      inputs:
+        script: |
+          IOS_PROJ=$(Pipeline.Workspace)/iOSProj
+          
+          sed -i '' "s/PROVISIONING_PROFILE_APP\ =\ \"\"/PROVISIONING_PROFILE_APP\ =\ \"$(profile.provisioningProfileUuid)\"/g" "$IOS_PROJ/Unity-iPhone.xcodeproj/project.pbxproj"
+          sed -i '' "s/CODE_SIGN_IDENTITY\ =\ \"iPhone Developer\"/CODE_SIGN_IDENTITY\ =\ \"$(cert.signingIdentity)\"/g" "$IOS_PROJ/Unity-iPhone.xcodeproj/project.pbxproj"
+          sed -i '' "s/\"CODE_SIGN_IDENTITY\[sdk=iphoneos\*\]\"\ =\ \"iPhone Developer\"/\"CODE_SIGN_IDENTITY\[sdk=iphoneos\*\]\"\ =\ \"$(cert.signingIdentity)\"/g" "$IOS_PROJ/Unity-iPhone.xcodeproj/project.pbxproj"      
+          #fix myapp.entitlements in wrong directory
+          sed -i '' "s/iOSProj\/myapp.entitlements/myapp.entitlements/g" "$IOS_PROJ/Unity-iPhone.xcodeproj/project.pbxproj"
+          #cat "$IOS_PROJ/Unity-iPhone.xcodeproj/project.pbxproj"
+
+    - task: CmdLine@2
+      displayName: 'Create ExportOptions.plist'
+      inputs:
+        script: |
+          EXPORT_OPTS_PLIST="ExportOptions.plist"
+          
+          /usr/libexec/PlistBuddy -c Clear $EXPORT_OPTS_PLIST
+          /usr/libexec/PlistBuddy -c "Add method string development" $EXPORT_OPTS_PLIST
+          /usr/libexec/PlistBuddy -c "Add signingStyle string manual" $EXPORT_OPTS_PLIST
+          /usr/libexec/PlistBuddy -c "Add provisioningProfiles dict" $EXPORT_OPTS_PLIST
+          /usr/libexec/PlistBuddy -c "Add provisioningProfiles:com.company.myapp string $(profile.provisioningProfileName)" $EXPORT_OPTS_PLIST        
+          #/usr/libexec/PlistBuddy -c Print $EXPORT_OPTS_PLIST
+
+    - task: Xcode@5
+      displayName: 'Xcode Build'
+      inputs:
+        actions: 'clean archive'
+        configuration: Release
+        sdk: iphoneos
+        xcWorkspacePath: '$(Pipeline.Workspace)/iOSProj/Unity-iPhone.xcworkspace'
+        scheme: 'Unity-iPhone'
+        packageApp: true
+        exportPath: output/iOS
+        exportOptions: plist
+        exportOptionsPlist: ExportOptions.plist
+        signingOption: default
+        args: -verbose
+
+    - task: PublishBuildArtifacts@1
+      displayName: 'Publish Artifact: Build Output'
+      inputs:
+        PathtoPublish: output
+        ArtifactName: Release
+      condition: succeeded()
